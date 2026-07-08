@@ -156,6 +156,7 @@
              aclnnVariantPack.aclInTensors[6]->tensor,
              aclnnVariantPack.aclInTensors[7]->tensor,
              shared_block_table,
+             param_.scaleValue,
              aclnnVariantPack.aclOutTensors.at(0)->tensor, 
              &this->aclnnOpCache_->workspaceSize, &this->aclnnOpCache_->aclExecutor);
  

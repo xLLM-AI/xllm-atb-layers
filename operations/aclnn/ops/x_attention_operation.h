@@ -27,6 +27,7 @@
      
      struct AclNNXAttentionParam {
          int32_t layerId = 0;
+         double scaleValue = 0.0;
      };
      
      class XAttentionOperation : public AclNNOperation {
