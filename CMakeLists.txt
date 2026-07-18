@@ -69,7 +69,8 @@ foreach(XLLM_CANN_ROOT IN ITEMS
   if(XLLM_CANN_ROOT)
     foreach(XLLM_CANN_INCLUDE_DIR IN ITEMS
         "${XLLM_CANN_ROOT}/include"
-        "${XLLM_CANN_ROOT}/aarch64-linux/include")
+        "${XLLM_CANN_ROOT}/aarch64-linux/include"
+        "${XLLM_CANN_ROOT}/x86_64-linux/include")
       if(EXISTS "${XLLM_CANN_INCLUDE_DIR}/aclnnop")
         target_include_directories(xllm_atb_layers PRIVATE
           "${XLLM_CANN_INCLUDE_DIR}"
