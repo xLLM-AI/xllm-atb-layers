@@ -2,6 +2,8 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
  */
 
+#include <limits>
+
 #include "sparse_flash_attention_operation.h"
 #include "operations/aclnn/utils/utils.h"
 #include "acl/acl.h"
@@ -87,6 +89,35 @@ int SparseFlashAttentionOperation::SetAclNNWorkspaceExecutor()
 {
     ATB_SPEED_LOG_DEBUG(opName_ << " SetAclNNWorkspaceExecutor start");
     AclNNVariantPack &aclnnVariantPack = this->aclnnOpCache_->aclnnVariantPack;
+    // The CANN built-in header uses this guard; the legacy generated header
+    // uses ACLNN_SPARSE_FLASH_ATTENTION_H_.
+#if defined(ACLNN_SPARSE_FLASH_ATTENTION_H)
+    constexpr int64_t allTokens = std::numeric_limits<int64_t>::max();
+    constexpr int64_t mlaAbsorbMode = 2;
+    constexpr bool returnSoftmaxLse = false;
+    int ret = aclnnSparseFlashAttentionGetWorkspaceSize(
+        aclnnVariantPack.aclInTensors.at(0)->tensor, // query
+        aclnnVariantPack.aclInTensors.at(1)->tensor, // key
+        aclnnVariantPack.aclInTensors.at(2)->tensor, // value
+        aclnnVariantPack.aclInTensors.at(3)->tensor, // sparse_indices
+        param_.hasBlockTable ? aclnnVariantPack.aclInTensors.at(4)->tensor : nullptr, // block_table
+        aclnnVariantPack.aclInTensors.at(5)->tensor, // actual_seq_lenths_query
+        aclnnVariantPack.aclInTensors.at(6)->tensor, // actual_seq_lenths_kv,
+        aclnnVariantPack.aclInTensors.at(7)->tensor, // query_rope,
+        aclnnVariantPack.aclInTensors.at(8)->tensor, // key_rope
+        param_.scaleValue, param_.sparseBlockSize,
+        const_cast<char *>(param_.queryLayout.c_str()), // query_layout
+        const_cast<char *>(param_.kvLayout.c_str()),   // key_layout
+        param_.sparseMode,
+        allTokens,
+        allTokens,
+        mlaAbsorbMode,
+        returnSoftmaxLse,
+        aclnnVariantPack.aclOutTensors.at(0)->tensor, // out
+        nullptr, // softmax_max
+        nullptr, // softmax_sum
+        &this->aclnnOpCache_->workspaceSize, &this->aclnnOpCache_->aclExecutor);
+#else
     int ret = aclnnSparseFlashAttentionGetWorkspaceSize(
         aclnnVariantPack.aclInTensors.at(0)->tensor, // query
         aclnnVariantPack.aclInTensors.at(1)->tensor, // key
@@ -103,6 +134,7 @@ int SparseFlashAttentionOperation::SetAclNNWorkspaceExecutor()
         param_.sparseMode,
         aclnnVariantPack.aclOutTensors.at(0)->tensor, // out
         &this->aclnnOpCache_->workspaceSize, &this->aclnnOpCache_->aclExecutor);
+#endif
     ATB_SPEED_LOG_DEBUG(opName_ << " SetAclNNWorkspaceExecutor end"
                                 << ", ret: " << ret << ", workspaceSize: " << this->aclnnOpCache_->workspaceSize
                                 << ", aclExecutor: " << this->aclnnOpCache_->aclExecutor);
