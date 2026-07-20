@@ -68,6 +68,8 @@ public:
     std::vector<bool> isAntiOutlier = {false, false};
     /// A flag indicating whether currentlayer is compressed
     bool isomnicompressed = false;
+    /// A flag indicating whether isTriuMask is disabled
+    bool disableisTriuMask = false;
 };
 } // namespace base
 } // namespace atb_speed

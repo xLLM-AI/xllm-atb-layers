@@ -518,6 +518,9 @@ void DecoderLayer<NormType>::SetFusionAttentionATBSelfAttentionParam(
     } else {
         fusionAttentionParam.selfAttentionParam.isTriuMask = this->param.isPrefill ? 1 : 0;
         fusionAttentionParam.selfAttentionParam.calcType = atb::infer::SelfAttentionParam::CalcType::PA_ENCODER;
+        if (this->param.disableisTriuMask) {
+            fusionAttentionParam.selfAttentionParam.isTriuMask = 0;
+        }
     }
     if (this->param.attnBackend == atb_speed::common::OpBackend::ACLNN && param.isFA) {
         fusionAttentionParam.selfAttentionParam.calcType = atb::infer::SelfAttentionParam::CalcType::PA_ENCODER;
