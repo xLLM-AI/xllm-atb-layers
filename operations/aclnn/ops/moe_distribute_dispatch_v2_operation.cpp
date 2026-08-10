@@ -62,6 +62,7 @@ atb::Status MoeDistributeDispatchV2Operation::InferShape(
 
     int32_t globalBS = GetGlobalBS(inTensorDescs.at(NUM3));
     int32_t globalTokenNum = globalBS * std::min(param_.localMoeExpertNum, param_.topk);
+    const bool is_a3 = IsA3();
 
     outTensorDescs.at(DIM0).shape.dims[DIM0] = param_.epRankId < param_.sharedExpertRankNum ? \
         globalTokenNum / param_.sharedExpertRankNum : globalTokenNum; // translatedmmtranslated
@@ -75,13 +76,19 @@ atb::Status MoeDistributeDispatchV2Operation::InferShape(
 
     outTensorDescs.at(DIM3).shape.dims[DIM0] = param_.localMoeExpertNum;
 
-    outTensorDescs.at(NUM4).shape.dims[DIM0] = param_.epRankSize * param_.localMoeExpertNum + \
-        globalBS * param_.topk * (param_.epRankSize / NUM8) * NUM2;
+    if (is_a3) {
+        outTensorDescs.at(NUM4).shape.dims[DIM0] =
+            param_.epRankSize * std::max(param_.tpRankSize, 1) * param_.localMoeExpertNum;
+    } else {
+        outTensorDescs.at(NUM4).shape.dims[DIM0] = param_.epRankSize * param_.localMoeExpertNum + \
+            globalBS * param_.topk * (param_.epRankSize / NUM8) * NUM2;
+    }
 
     outTensorDescs.at(NUM5).shape.dims[DIM0] = 1;
 
-    outTensorDescs.at(NUM6).shape.dims[DIM0] =
-        param_.epRankId < param_.sharedExpertRankNum ? globalTokenNum / param_.sharedExpertRankNum : globalTokenNum;
+    // CANN 9.0 requires an A-length expandScalesOut on A3 as well.
+    outTensorDescs.at(NUM6).shape.dims[DIM0] = param_.epRankId < param_.sharedExpertRankNum ?
+        globalTokenNum / param_.sharedExpertRankNum : globalTokenNum;
 
     ATB_SPEED_LOG_DEBUG(opName_ << "MoeDistributeDispatchV2Operation infer shape end");
     return 0;
@@ -132,15 +139,22 @@ int MoeDistributeDispatchV2Operation::SetAclNNWorkspaceExecutor()
 
     AclNNVariantPack &aclnnVariantPack = this->aclnnOpCache_->aclnnVariantPack;
 
+    const bool is_a3 = IsA3();
     aclnnVariantPack.aclInTensors.at(NUM2)->tensorIdx = NUM4;
+    // A3 omits expertScalesOptional, so executor input index 4 has no address to update.
+    aclnnVariantPack.aclInTensors.at(NUM2)->needUpdateTensorDataPtr = !is_a3;
     aclnnVariantPack.aclInTensors.at(NUM3)->needUpdateTensorDataPtr = false;
     int32_t globalBS = GetGlobalBS(aclnnVariantPack.aclInTensors.at(NUM3)->atbTensor.desc);
+    const aclTensor *expert_scales =
+        is_a3 ? nullptr : aclnnVariantPack.aclInTensors.at(NUM2)->tensor;
+    const char *comm_alg = is_a3 ? nullptr : param_.commAlg.data();
+    aclTensor *expand_scales = aclnnVariantPack.aclOutTensors.at(NUM6)->tensor;
     int ret = aclnnMoeDistributeDispatchV2GetWorkspaceSize(
         aclnnVariantPack.aclInTensors.at(DIM0)->tensor,
         aclnnVariantPack.aclInTensors.at(DIM1)->tensor,
         param_.quantSmooth ? aclnnVariantPack.aclInTensors.at(DIM2)->tensor : nullptr,
         nullptr,
-        aclnnVariantPack.aclInTensors.at(NUM2)->tensor,
+        expert_scales,
         param_.epCommName.data(),
         param_.epRankSize,
         param_.epRankId,
@@ -154,14 +168,15 @@ int MoeDistributeDispatchV2Operation::SetAclNNWorkspaceExecutor()
         param_.quantMode,
         globalBS,
         param_.expertTokenNumsType,
-        param_.commAlg.data(),
+        comm_alg,
         aclnnVariantPack.aclOutTensors.at(DIM0)->tensor,
         aclnnVariantPack.aclOutTensors.at(DIM1)->tensor,
         aclnnVariantPack.aclOutTensors.at(DIM2)->tensor,
         aclnnVariantPack.aclOutTensors.at(NUM3)->tensor,
         aclnnVariantPack.aclOutTensors.at(NUM4)->tensor,
+        // CANN 9.0 requires a [1] placeholder even without TP communication.
         aclnnVariantPack.aclOutTensors.at(NUM5)->tensor,
-        aclnnVariantPack.aclOutTensors.at(NUM6)->tensor,
+        expand_scales,
         &this->aclnnOpCache_->workspaceSize,
         &this->aclnnOpCache_->aclExecutor);
     ATB_SPEED_LOG_DEBUG(opName_ << " SetAclNNWorkspaceExecutor end, ret:" << ret

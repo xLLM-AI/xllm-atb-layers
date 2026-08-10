@@ -339,7 +339,7 @@ std::map<std::string, uint32_t> ConstructTensorMap(
                 "ffn_allgather", intermediateTensorList);
         }
     }
-    if (param.hasFfnComm) {
+    if (param.ffnReduceScatter || (param.ffnAllGather && !param.hasAttnComm)) {
         atb_speed::common::AddTensorToList(deepseekV2IntermediateCandidates,
             "ffn_reduce_scatter", intermediateTensorList);
     }
@@ -1340,9 +1340,7 @@ atb::Status SetMlpResidualAdd(atb::GraphParam &opGraph, const DecoderLayerParam 
     std::vector<std::string> mlpResidualAddInTensorNames = {tmp,
         param.ffnAllreduce || param.ffnReduceScatter ?
         (is_auxiliary ? "intermediate_mlp_out_auxiliary" : "intermediate_mlp_out" ) :
-        ((param.hasAttnComm) && (param.hasFfnComm) ?
-        (is_auxiliary ? "intermediate_moe_out_with_shared_with_padding_auxiliary" : "intermediate_moe_out_with_shared_with_padding") 
-        : (is_auxiliary ? "intermediate_moe_out_with_shared_auxiliary" : "intermediate_moe_out_with_shared"))};
+        (is_auxiliary ? "intermediate_moe_out_with_shared_auxiliary" : "intermediate_moe_out_with_shared")};
     std::vector<std::string> mlpResidualAddOutTensorNames = {param.ffnAllGather || param.ffnReduceScatter ?
         ((param.enableQkvdownDp && !param.isLastLayer) ? 
         (is_auxiliary ? "out_decoder_layer_auxiliary" : "out_decoder_layer") : 
@@ -1880,7 +1878,7 @@ atb::Status SetPostMoeProcess(std::map<std::string, uint32_t> &tensorMap,
             xllm::atb_utils::insert_pop_events(opGraph);
         }
     }
-    if (param.hasFfnComm && param.hasAttnComm) {
+    if (param.ffnReduceScatter) {
         CHECK_OPERATION_STATUS_RETURN(SetFFNPadding(opGraph, param, tensorMap, is_auxiliary, stream_id));
     }
     if (param.ffnAllreduce) {

@@ -72,18 +72,23 @@ int MoeDistributeCombineV2Operation::SetAclNNWorkspaceExecutor()
     
     aclnnVariantPack.aclInTensors.at(NUM6)->tensorIdx = NUM10;
     int64_t globalBS = GetGlobalBS(aclnnVariantPack.aclInTensors.at(DIM0)->atbTensor.desc);
+    const bool is_a3 = IsA3();
+    // Match DispatchV2: CANN 9.0 requires expandScales on A3 as well.
+    const aclTensor *expand_scales = aclnnVariantPack.aclInTensors.at(NUM6)->tensor;
+    const char *comm_alg = is_a3 ? nullptr : param_.commAlg.data();
     int ret = aclnnMoeDistributeCombineV2GetWorkspaceSize(
         aclnnVariantPack.aclInTensors.at(DIM0)->tensor,
         aclnnVariantPack.aclInTensors.at(DIM1)->tensor,
         aclnnVariantPack.aclInTensors.at(DIM2)->tensor,
         aclnnVariantPack.aclInTensors.at(NUM3)->tensor,
         aclnnVariantPack.aclInTensors.at(NUM4)->tensor,
+        // Forward the Dispatch [1] placeholder required by CANN 9.0.
         aclnnVariantPack.aclInTensors.at(NUM5)->tensor,
         nullptr,
         nullptr,
         nullptr,
         nullptr,
-        aclnnVariantPack.aclInTensors.at(NUM6)->tensor,
+        expand_scales,
         nullptr,
         param_.epCommName.data(),
         param_.epRankSize,
@@ -99,7 +104,7 @@ int MoeDistributeCombineV2Operation::SetAclNNWorkspaceExecutor()
         0,
         param_.commQuantMode,
         0,
-        param_.commAlg.data(),
+        comm_alg,
         aclnnVariantPack.aclOutTensors.at(DIM0)->tensor,
         &this->aclnnOpCache_->workspaceSize,
         &this->aclnnOpCache_->aclExecutor);
