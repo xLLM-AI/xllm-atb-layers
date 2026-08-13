@@ -56,6 +56,7 @@ target_include_directories(xllm_atb_layers PRIVATE
   $ENV{PYTORCH_INSTALL_PATH}/include/torch/csrc/api/include
   $ENV{PYTORCH_NPU_INSTALL_PATH}/include
   $ENV{NPU_HOME_PATH}/include
+  $ENV{NPU_HOME_PATH}/include/aclnnop
   $ENV{ATB_HOME_PATH}/include
   $ENV{NPU_HOME_PATH}/opp/vendors/custom_xllm_math/op_api/include/aclnnop
 )
