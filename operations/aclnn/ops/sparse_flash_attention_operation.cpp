@@ -89,10 +89,10 @@ int SparseFlashAttentionOperation::SetAclNNWorkspaceExecutor()
     // CANN 9.0's SparseFlashAttention adds 4 inputs (fixed defaults) and 2
     // outputs. See:
     // https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/API/aolapi/context/ops-transformer/aclnnSparseFlashAttention.md
-    // int64_t preTokens = 9223372036854775807;
-    // int64_t nextTokens = 9223372036854775807;
-    // int64_t attentionMode = 2;
-    // bool returnSoftmaxLse = false;
+    int64_t preTokens = 9223372036854775807;
+    int64_t nextTokens = 9223372036854775807;
+    int64_t attentionMode = 2;
+    bool returnSoftmaxLse = false;
     AclNNVariantPack &aclnnVariantPack = this->aclnnOpCache_->aclnnVariantPack;
     int ret = aclnnSparseFlashAttentionGetWorkspaceSize(
         aclnnVariantPack.aclInTensors.at(0)->tensor, // query
@@ -104,14 +104,14 @@ int SparseFlashAttentionOperation::SetAclNNWorkspaceExecutor()
         aclnnVariantPack.aclInTensors.at(6)->tensor, // actual_seq_lenths_kv,
         aclnnVariantPack.aclInTensors.at(7)->tensor, // query_rope,
         aclnnVariantPack.aclInTensors.at(8)->tensor, // key_rope
-        param_.scaleValue, param_.sparseBlockSize,  
+        param_.scaleValue, param_.sparseBlockSize,
         const_cast<char *>(param_.queryLayout.c_str()), // query_layout
         const_cast<char *>(param_.kvLayout.c_str()),   // key_layout
         param_.sparseMode,
-        // preTokens, nextTokens, attentionMode, returnSoftmaxLse, // cann9.0 add
+        preTokens, nextTokens, attentionMode, returnSoftmaxLse, // cann9.0 add
         aclnnVariantPack.aclOutTensors.at(0)->tensor, // out
-        // aclnnVariantPack.aclOutTensors.at(1)->tensor, // softmaxMaxOut // cann9.0 add
-        // aclnnVariantPack.aclOutTensors.at(2)->tensor, // softmaxSumOut // cann9.0 add
+        nullptr, // softmax_max, unused since returnSoftmaxLse=false
+        nullptr, // softmax_sum, unused since returnSoftmaxLse=false
         &this->aclnnOpCache_->workspaceSize, &this->aclnnOpCache_->aclExecutor);
     ATB_SPEED_LOG_DEBUG(opName_ << " SetAclNNWorkspaceExecutor end"
                                 << ", ret: " << ret << ", workspaceSize: " << this->aclnnOpCache_->workspaceSize
