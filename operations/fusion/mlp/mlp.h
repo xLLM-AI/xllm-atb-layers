@@ -72,6 +72,10 @@ struct MlpParam {
     bool isBF16 = false;
     /// A flag indicating the prefill and decode phases
     bool isPrefill = false;
+    /// Use the low-latency NZ decode quant matmul for gate-up.
+    bool enableQuantMatmulNzGateUpDecode = false;
+    /// Use the low-latency NZ decode quant matmul for down projection.
+    bool enableQuantMatmulNzDownDecode = false;
     bool isEdgeHardware = false;
     /// A flag indicating whether gate and up linear has bias
     bool gateUpHasBias = false;

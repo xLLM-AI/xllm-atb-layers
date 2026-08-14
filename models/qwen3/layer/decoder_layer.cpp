@@ -34,7 +34,13 @@ void QwenLayerParam::PrintParam()
        << ", enableLogN: " << this->enableLogN
        << ", isEmbedding: " << this->isEmbedding
        << ", enableQScale: " << this->enableQScale
-       << ", enableXattention: " << this->enableXattention;
+       << ", enableXattention: " << this->enableXattention
+       << ", enableQuantMatmulNzGateUpDecode: "
+       << this->enableQuantMatmulNzGateUpDecode
+       << ", enableQuantMatmulNzDownDecode: "
+       << this->enableQuantMatmulNzDownDecode
+       << ", enableQuantMatmulNzQkvDecode: "
+       << this->enableQuantMatmulNzQkvDecode;
     ATB_SPEED_LOG_DEBUG(ss.str());
 }
 
@@ -158,6 +164,8 @@ void QwenDecoderLayer::SetFusionAttentionParam(
     fusionAttentionParam.isPrefixCacheWithoutChunk = param.isPrefixCacheWithoutChunk;
     fusionAttentionParam.enableSplitRmsNormRope = param.enableSplitRmsNormRope;
     fusionAttentionParam.matmulBackend = param.matmulBackend;
+    fusionAttentionParam.enableQuantMatmulNzQkvDecode =
+        param.enableQuantMatmulNzQkvDecode;
     if (param.isFIA) {
         fusionAttentionParam.aclnnFusedInferAttnParam.needMask = true;
         fusionAttentionParam.aclnnFusedInferAttnParam.enablePa = true;

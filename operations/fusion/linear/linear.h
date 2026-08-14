@@ -59,6 +59,8 @@ struct FusionLinearParam {
     bool enableCVOverlap = false;
     /// Force graph construction onto a single stream.
     bool forceSingleStream = false;
+    /// Use the low-latency NZ decode quant matmul.
+    bool enableQuantMatmulNzDecode = false;
 
     bool enableSwiGLUQuantForSharedExperts = false;
     /// A flag indicating whether to use swigluQuant

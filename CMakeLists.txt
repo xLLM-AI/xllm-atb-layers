@@ -59,6 +59,9 @@ target_include_directories(xllm_atb_layers PRIVATE
   $ENV{ATB_HOME_PATH}/include
   $ENV{NPU_HOME_PATH}/opp/vendors/custom_xllm_math/op_api/include/aclnnop
 )
+
+target_link_libraries(xllm_atb_layers PRIVATE ${CMAKE_DL_LIBS})
+
 # The header file path for CANN 9.0 operators:
 # cann-9.0.0/x86_64-linux/include/ or cann-9.0.0/arm64-linux/include/
 # CANN names its x86 arch dir "x86_64-linux", but the vcpkg triplet is "x64-linux";
