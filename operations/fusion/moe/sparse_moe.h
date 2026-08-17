@@ -26,6 +26,7 @@
 #include "operations/fusion/norm/norm_linear.h"
 #include "operations/aclrt/ops/aclrt_capture_event.h"
 #include "operations/fusion/moe/moe_shared_expert.h"
+#include "operations/aclnn/ops/mega_moe_operation.h"
 
 namespace atb_speed {
 namespace common {
@@ -122,6 +123,8 @@ struct SparseMoeParam {
     std::shared_ptr<CaptureEventState> beforeCombineEvent;
     std::shared_ptr<CaptureEventState> sharedExpertCompletionEvent;
     std::string overlapEventPrefix;
+    bool enableMegaMoe = false;
+    MegaMoeParam megaMoeParam;
 };
 
 /// This function creates the graph of the MoE of a model.

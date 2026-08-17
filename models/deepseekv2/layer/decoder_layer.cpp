@@ -191,6 +191,8 @@ std::map<std::string, std::vector<std::string>> GetDeepseekV2LayerInTensorCandid
             "in_k_cache_indexer", "in_seq_len_query"}},
         {"topk_share", {
             "in_shared_topk_indices"}},
+         {"mega_moe", {
+             "in_mega_moe_context"}}
     };
     SetDeepseekV2LayerInTensorDefaultCandidates(deepseekV2LayerInTensorCandidates);
     return deepseekV2LayerInTensorCandidates;
@@ -392,6 +394,9 @@ std::map<std::string, uint32_t> ConstructTensorMap(
     }
     if (param.enableMlaPrefetch) { // New tensor please add here before
         atb_speed::common::AddTensorToList(deepseekV2InTensorCandidates, "mla_prefetch", inTensorList);
+    }
+    if (param.enableMegaMoe) {
+        atb_speed::common::AddTensorToList(deepseekV2InTensorCandidates, "mega_moe", inTensorList);
     }
 
     inTensorNum = inTensorList.size();
@@ -1149,6 +1154,8 @@ atb::Status SetSparseMoeParam(atb_speed::common::SparseMoeParam &sparseMoeParam,
     sparseMoeParam.beforeDispatchEvent = overlapContext.beforeDispatchEvent;
     sparseMoeParam.beforeCombineEvent = overlapContext.beforeCombineEvent;
     sparseMoeParam.overlapEventPrefix = overlapContext.eventPrefix;
+    sparseMoeParam.enableMegaMoe = param.enableMegaMoe;
+    sparseMoeParam.megaMoeParam = param.megaMoeParam;
 
     return atb::NO_ERROR;
 }
@@ -1280,6 +1287,9 @@ int64_t SetMoe(atb::GraphParam &opGraph, const DecoderLayerParam &param, std::ma
             "in_mlp_down_compress_idx_shared_expert" + sharedExpertWeightSuffix};
         moeInTensorNames.insert(
             moeInTensorNames.end(), sharedExpertWeightNames.begin(), sharedExpertWeightNames.end());
+    }
+    if (param.enableMegaMoe) {
+        moeInTensorNames.push_back("in_mega_moe_context");
     }
     moeNode.inTensorIds = atb_speed::common::GetTensorIdxList(tensorMap, moeInTensorNames);
     moeNode.outTensorIds = atb_speed::common::GetTensorIdxList(tensorMap, 

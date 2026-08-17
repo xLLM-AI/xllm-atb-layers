@@ -65,12 +65,18 @@ void AclNNOpCache::Destroy()
     this->aclnnVariantPack.aclOutTensors.clear();
 
     for (size_t i = 0; i < this->aclnnVariantPack.aclInTensorList.size(); ++i) {
+        if (this->aclnnVariantPack.aclInTensorList[i] == nullptr) {
+            continue;
+        }
         ret = aclDestroyTensorList(this->aclnnVariantPack.aclInTensorList[i]);
         if (ret != 0) { ATB_SPEED_LOG_ERROR("Plugin Op Cache: destroy aclInTensorList " << i << " failed."); }
     }
     this->aclnnVariantPack.aclInTensorList.clear();
 
     for (size_t i = 0; i < this->aclnnVariantPack.aclOutTensorList.size(); ++i) {
+        if (this->aclnnVariantPack.aclOutTensorList[i] == nullptr) {
+            continue;
+        }
         ret = aclDestroyTensorList(this->aclnnVariantPack.aclOutTensorList[i]);
         if (ret != 0) { ATB_SPEED_LOG_ERROR("Plugin Op Cache: destroy aclOutTensorList " << i << " failed."); }
     }

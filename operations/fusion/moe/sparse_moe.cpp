@@ -21,6 +21,7 @@
 #include <memory>
 #include "moe_mlp.h"
 #include "device_limited_routing.h"
+#include "operations/fusion/moe/mega_moe.h"
 #include "operations/fusion/moe/ep/dynamic_ep_moe.h"
 #include "operations/aclnn/ops/moe_topk_softmax_operation.h"
 #include "operations/aclnn/ops/vector_norm_operation.h"
@@ -48,6 +49,56 @@ static const uint64_t NUM5 = 5;
 constexpr uint32_t TOPK_IN_NUM = 4;
 constexpr uint32_t TOPK_IN3_DIM = 3;
 constexpr const char* FUSED_ADD_TOPK_ADDNUM_FP32 = "intermediate_router_bias_fp32";
+constexpr const char* MEGA_MOE_EXPERT_TOKEN_NUMS = "intermediate_mega_moe_expert_token_nums";
+
+bool SkipRouterWeightCast(const SparseMoeParam &param)
+{
+    return !param.enableFusedTopk && !param.enableMoeDistribute && (param.processLogits != "none") &&
+        (!param.enableFusedTopk || param.enableGatingDp) && !param.mixSharedRouting;
+}
+
+std::string GetSelectedExpertsTensorName(const SparseMoeParam &param)
+{
+    if (param.enableGatingDp) {
+        return "intermediate_selected_experts_all";
+    }
+    if (param.enableLoadBalance) {
+        return "in_fake_topk";
+    }
+    if (param.enableEPWB) {
+        return "intermediate_selected_experts_routed";
+    }
+    return "intermediate_selected_experts";
+}
+
+std::string GetRouterWeightsTopkTensorName(const SparseMoeParam &param)
+{
+    if (param.enableGatingDp) {
+        return "intermediate_router_weights_topk_reduced_all";
+    }
+    if (param.processLogits == "none") {
+        return "intermediate_router_weights_topk";
+    }
+    if (param.enableFusedTopk) {
+        return "intermediate_router_weights_topk_reduced_fp32";
+    }
+    if (param.enableMoeDistribute) {
+        return param.mixSharedRouting ? "intermediate_router_weights_topk_reduced_mix_shared" :
+            "intermediate_router_weights_topk_reduced_fp32";
+    }
+    if (!SkipRouterWeightCast(param)) {
+        return "intermediate_router_weights_topk_reduced_fp16";
+    }
+    return param.mixSharedRouting ? "intermediate_router_weights_topk_reduced_mix_shared" :
+        "intermediate_router_weights_topk_reduced";
+}
+
+void AppendRepeatedTensorName(std::vector<std::string> &tensorNames, const std::string &tensorName, uint32_t count)
+{
+    for (uint32_t i = 0; i < count; ++i) {
+        tensorNames.push_back(tensorName);
+    }
+}
 
 std::map<std::string, std::vector<std::string>> GetSparseMoeInTensorCandidates()
 {
@@ -87,6 +138,9 @@ std::map<std::string, std::vector<std::string>> GetSparseMoeInTensorCandidates()
             "in_mlp_down_weight_shared_expert", "in_mlp_down_bias_shared_expert",
             "in_mlp_down_descale_shared_expert", "in_mlp_down_offset_shared_expert",
             "in_mlp_down_scale_shared_expert", "in_mlp_down_compress_idx_shared_expert"}
+        },
+        {"mega_moe", {
+            "in_mega_moe_context"}
         }
     };
     return moeMlpInTensorCandidates;
@@ -205,6 +259,10 @@ std::map<std::string, uint32_t> ConstructTensorMap(
     }
     if (param.forceMoeFusedAddTopkAddNumFp32) {
         interTensorList.push_back(FUSED_ADD_TOPK_ADDNUM_FP32);
+    }
+    if (param.enableMegaMoe) {
+        AddTensorToList(moeMlpInTensorCandidates, "mega_moe", inTensorList);
+        interTensorList.push_back(MEGA_MOE_EXPERT_TOKEN_NUMS);
     }
     inTensorNum = inTensorList.size();
     outTensorNum = outTensorList.size();
@@ -838,38 +896,8 @@ std::list<std::string> GetOutTensorName(const SparseMoeParam &param)
     nameList.push_back("in_mlp_down_compress_idx_expert");
     nameList.push_back("in_expert_array");
 
-    bool skipCast = !param.enableFusedTopk && !param.enableMoeDistribute && (param.processLogits != "none") && (!param.enableFusedTopk || param.enableGatingDp) && !param.mixSharedRouting;
-    if (!param.enableGatingDp) {
-        nameList.push_back(param.enableLoadBalance ? "in_fake_topk" :
-            (param.enableEPWB ? "intermediate_selected_experts_routed" : "intermediate_selected_experts"));
-        if (param.processLogits != "none") {
-            std::string routerWeightsTopkReducedName;
-            if (param.enableFusedTopk){
-                routerWeightsTopkReducedName = "intermediate_router_weights_topk_reduced_fp32";
-            }
-            else if (param.enableMoeDistribute) {
-                if (param.mixSharedRouting) {
-                    routerWeightsTopkReducedName = "intermediate_router_weights_topk_reduced_mix_shared";
-                } else {
-                    routerWeightsTopkReducedName = "intermediate_router_weights_topk_reduced_fp32";
-                }
-            } else if (!skipCast && !param.enableMoeDistribute) {
-                routerWeightsTopkReducedName = "intermediate_router_weights_topk_reduced_fp16";
-            } else {
-                if (param.mixSharedRouting) {
-                    routerWeightsTopkReducedName = "intermediate_router_weights_topk_reduced_mix_shared";
-                } else {
-                    routerWeightsTopkReducedName = "intermediate_router_weights_topk_reduced";
-                }
-            }
-            nameList.push_back(routerWeightsTopkReducedName);
-        } else {
-            nameList.push_back("intermediate_router_weights_topk");
-        }
-    } else {
-        nameList.push_back("intermediate_selected_experts_all");
-        nameList.push_back("intermediate_router_weights_topk_reduced_all");
-    }
+    nameList.push_back(GetSelectedExpertsTensorName(param));
+    nameList.push_back(GetRouterWeightsTopkTensorName(param));
     nameList.push_back("in_one_hot");
     nameList.push_back("in_zero_hot");
     if (param.hasMoeEp) {
@@ -899,10 +927,60 @@ std::list<std::string> GetOutTensorName(const SparseMoeParam &param)
     return nameList;
 }
 
+atb::Status CreateMegaMoeExpertNode(
+    std::map<std::string, uint32_t> &tensorMap,
+    const SparseMoeParam &param,
+    atb::GraphParam &opGraph)
+{
+    if (!param.hasMoeEp || param.megaMoeParam.epWorldSize <= 1) {
+        ATB_SPEED_LOG_ERROR("MegaMoe requires MoE expert parallelism, epWorldSize="
+            << param.megaMoeParam.epWorldSize);
+        return atb::ERROR_INVALID_PARAM;
+    }
+    if (param.enableGatingDp || param.enableLoadBalance || param.enableEPWB ||
+        param.mixSharedRouting || param.enableExpertCumSumOutput) {
+        ATB_SPEED_LOG_ERROR("MegaMoe does not support gating-dp, load-balance, EPWB, mix-shared-routing, "
+            "or expert-cumsum-output in SparseMoe graph.");
+        return atb::ERROR_INVALID_PARAM;
+    }
+    if (param.megaMoeParam.weight1TensorNum != 1 || param.megaMoeParam.weight2TensorNum != 1 ||
+        param.megaMoeParam.weightScales1TensorNum > 1 || param.megaMoeParam.weightScales2TensorNum > 1 ||
+        param.megaMoeParam.bias1TensorNum > 1 || param.megaMoeParam.bias2TensorNum > 1) {
+        ATB_SPEED_LOG_ERROR("MegaMoe SparseMoe graph currently expects packed expert tensors as single TensorList "
+            "entries.");
+        return atb::ERROR_INVALID_PARAM;
+    }
+
+    atb::Node expertNode;
+    CHECK_OPERATION_STATUS_RETURN(CreateMegaMoeOperation(param.megaMoeParam, &expertNode.operation));
+    std::vector<std::string> tensorNames = {
+        "in_mega_moe_context",
+        "in_hiddenstates",
+        GetSelectedExpertsTensorName(param),
+        GetRouterWeightsTopkTensorName(param)
+    };
+    AppendRepeatedTensorName(tensorNames, "in_mlp_gateup_weight_expert", param.megaMoeParam.weight1TensorNum);
+    AppendRepeatedTensorName(tensorNames, "in_mlp_down_weight_expert", param.megaMoeParam.weight2TensorNum);
+    AppendRepeatedTensorName(tensorNames, "in_mlp_gateup_scale_expert", param.megaMoeParam.weightScales1TensorNum);
+    AppendRepeatedTensorName(tensorNames, "in_mlp_down_scale_expert", param.megaMoeParam.weightScales2TensorNum);
+    AppendRepeatedTensorName(tensorNames, "in_mlp_gateup_bias_expert", param.megaMoeParam.bias1TensorNum);
+    AppendRepeatedTensorName(tensorNames, "in_mlp_down_bias_expert", param.megaMoeParam.bias2TensorNum);
+
+    expertNode.inTensorIds = GetTensorIdxList(tensorMap, tensorNames);
+    expertNode.outTensorIds = {GetTensorIdx(tensorMap, "out_moe_rout"),
+                               GetTensorIdx(tensorMap, MEGA_MOE_EXPERT_TOKEN_NUMS)};
+    opGraph.nodes.push_back(expertNode);
+    ATB_SPEED_LOG_DEBUG("MegaMoe expert calculation success");
+    return atb::NO_ERROR;
+}
+
 atb::Status GetoutTensorIdx(
     std::map<std::string, uint32_t> &tensorMap,
     const SparseMoeParam &param, atb::GraphParam &opGraph)
 {
+    if (param.enableMegaMoe) {
+        return CreateMegaMoeExpertNode(tensorMap, param, opGraph);
+    }
     if (param.enableEPWB) {
         if (param.mixSharedRouting) {
             CHECK_OPERATION_STATUS_RETURN(CreateConcatExpertOperation(tensorMap, opGraph));

@@ -2576,7 +2576,7 @@ atb::Status SparseAttention(const LatentAttentionParam<NormParamType> &param, at
     } else {
         CHECK_OPERATION_STATUS_RETURN(sparse::AddSparseFlashAttentionNode(param, opGraph, tensorMap));
     }
-    // CHECK_OPERATION_STATUS_RETURN(sparse::AddsfaTransposeNode(param, opGraph, tensorMap)); 
+    // CHECK_OPERATION_STATUS_RETURN(sparse::AddsfaTransposeNode(param, opGraph, tensorMap));
     // CHECK_OPERATION_STATUS_RETURN(sparse::AddReprojVNode(param, opGraph, tensorMap));
     // CHECK_OPERATION_STATUS_RETURN(sparse::AddReprojVTransposeNode(param, opGraph, tensorMap));
     // using MATMUL_EIN_SUM

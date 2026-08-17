@@ -24,6 +24,7 @@
 #include "atb_speed/base/external_comm_manager.h"
 #include "atb_speed/utils/operation_util.h"
 #include "models/moe/layer/decoder_layer.h"
+#include "operations/aclnn/ops/mega_moe_operation.h"
 
 namespace atb_speed {
 namespace deepseekV2 {
@@ -128,6 +129,8 @@ public:
     // replica (kv_split_size == 1) so cross-rank prefix exchange is
     // unnecessary. Default false preserves legacy AllGather behavior.
     bool enablePrefixCacheLocal = false;
+    bool enableMegaMoe = false;
+    atb_speed::common::MegaMoeParam megaMoeParam;
 };
 
 /// The index of the GATEUP linear within the mlp
