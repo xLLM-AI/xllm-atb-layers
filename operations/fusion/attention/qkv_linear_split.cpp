@@ -170,6 +170,8 @@ atb::Status AddQNormLinearNode(const FusionAttentionParam<NormParamType> &param,
     qNormLinearParam.fusionLinearParam.transposeType = param.layerLinearTransposeType[0];
     qNormLinearParam.fusionLinearParam.quantGroupSize = param.quantGroupSize;
     qNormLinearParam.fusionLinearParam.matmulBackend = param.matmulBackend;
+    qNormLinearParam.fusionLinearParam.enableQuantMatmulNzDecode =
+        param.enableQuantMatmulNzQkvDecode && isPack;
     qNormLinearParam.fusionLinearParam.isThrowDequant = false;
     qNormLinearParam.fusionLinearParam.isPrefill = param.isPrefill;
     qNormLinearParam.skipNorm = param.skipNorm;

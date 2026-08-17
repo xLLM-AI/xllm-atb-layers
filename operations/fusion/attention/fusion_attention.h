@@ -108,6 +108,8 @@ template <typename NormParamType> struct FusionAttentionParam {
   bool skipNorm = false;
   /// A flag indicating whether normalization has bias
   bool normHasBias = false;
+  /// Use the target NZ decode quant matmul for the packed QKV projection.
+  bool enableQuantMatmulNzQkvDecode = false;
   /// A flag indicating whether to use NormQuant fusion operation
   bool enableNormQuantOp = true;
   /// A flag indecating whether to prefetch weight

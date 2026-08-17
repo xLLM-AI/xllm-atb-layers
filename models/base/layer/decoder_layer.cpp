@@ -847,6 +847,10 @@ void DecoderLayer<NormType>::SetMlpParam(atb_speed::common::MlpParam<NormType> &
 {
     mlpParam.isBF16 = this->param.isBF16;
     mlpParam.isPrefill = this->param.isPrefill;
+    mlpParam.enableQuantMatmulNzGateUpDecode =
+        this->param.enableQuantMatmulNzGateUpDecode;
+    mlpParam.enableQuantMatmulNzDownDecode =
+        this->param.enableQuantMatmulNzDownDecode;
     mlpParam.layerLinearQuantType = this->param.linearQuantType;
     mlpParam.layerLinearTransposeType = this->param.linearTransposeType;
     mlpParam.layerLinearDescs = this->param.linearDescs;

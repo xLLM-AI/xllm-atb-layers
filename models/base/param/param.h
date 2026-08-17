@@ -68,6 +68,10 @@ public:
     bool isEdgeHardware = false;
     /// A flag that indicates whether the MLP module utilizes the SwiGLU fusion operation
     bool enableSwiGLU = false;
+    /// Use the low-latency NZ decode quant matmul for gate-up.
+    bool enableQuantMatmulNzGateUpDecode = false;
+    /// Use the low-latency NZ decode quant matmul for down projection.
+    bool enableQuantMatmulNzDownDecode = false;
     /// A flag indicating whether q_norm and k_norm is enabled
     bool useQKNorm = false;
 

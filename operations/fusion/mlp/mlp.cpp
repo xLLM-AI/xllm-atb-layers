@@ -130,6 +130,8 @@ void SetGateUpNormLinearParam(atb_speed::common::NormLinearParam<NormParamType> 
     gateUpNormLinearParam.fusionLinearParam.quantGroupSize = param.quantGroupSize;
     gateUpNormLinearParam.fusionLinearParam.matmulBackend = param.matmulBackend;
     gateUpNormLinearParam.fusionLinearParam.isPrefill = param.isPrefill;
+    gateUpNormLinearParam.fusionLinearParam.enableQuantMatmulNzDecode =
+        param.enableQuantMatmulNzGateUpDecode;
     gateUpNormLinearParam.skipNorm = param.skipNorm;
     gateUpNormLinearParam.normHasBias = param.normHasBias;
     gateUpNormLinearParam.enableAddNorm = param.enableAddNorm;
@@ -145,7 +147,8 @@ void SetGateUpNormLinearParam(atb_speed::common::NormLinearParam<NormParamType> 
         param.downLinearTensorParallelInfo.backend;
     bool gateUpIsQuant = IsLinearDescQuant(param, GATE_LINEAR_INDEX);
     bool downIsQuant = IsLinearDescQuant(param, DOWN_LINEAR_INDEX);
-    if (param.enableSwigluQuant && gateUpIsQuant && downIsQuant
+    if (!param.enableQuantMatmulNzGateUpDecode &&
+        param.enableSwigluQuant && gateUpIsQuant && downIsQuant
         && UseQuantBatchMatmul(gateUpNormLinearParam.fusionLinearParam) && !param.isPrefill) {
         gateUpNormLinearParam.fusionLinearParam.isThrowDequant = true;  // Linear out int_32
         gateUpNormLinearParam.fusionLinearParam.enableSwigluQuant = false;
@@ -189,7 +192,7 @@ atb::Status AddMlpNormLinearGateUp(const MlpParam<NormParamType> &param,
     }
     atb::SVector<std::string> gateUpOutTensorNames = {};
     if (param.mlpPackType == MlpPackType::GATE_UP_WEIGHT_PACK) {
-        gateUpOutTensorNames = {"intermediate_gate_up"} ;
+        gateUpOutTensorNames = {"intermediate_gate_up"};
     } else if (param.mlpPackType == MlpPackType::GATE_UP_WEIGHT_NO_PACK) {
         gateUpOutTensorNames = {"intermediate_gate"};
     } else {
@@ -386,6 +389,8 @@ void SetDownLinearParallelParam(const MlpParam<NormParamType> &param,
     downLinearParallelParam.fusionLinearParam.isDownLinear = true;
     downLinearParallelParam.fusionLinearParam.enableSwigluQuant = param.enableSwigluQuant;
     bool downIsQuant = IsLinearDescQuant(param, DOWN_LINEAR_INDEX);
+    downLinearParallelParam.fusionLinearParam.enableQuantMatmulNzDecode =
+        param.enableQuantMatmulNzDownDecode && downIsQuant;
     if (param.enableSwigluQuant && downIsQuant) {
         if (param.isPrefill && downLinearParallelParam.fusionLinearParam.quantType == \
                 atb_speed::common::LinearQuantType::LINEAR_W8A8_DYNAMIC_QUANT) {
@@ -478,7 +483,8 @@ atb::Status AddDequantSwigluQuantNode(const MlpParam<NormParamType> &param, atb:
     FusionLinearParam linearParam;
     linearParam.matmulBackend = param.matmulBackend;
     linearParam.quantType = downQuantType;
-    if (gateUpIsQuant && UseQuantBatchMatmul(linearParam) && !param.isPrefill) {
+    if (!param.enableQuantMatmulNzGateUpDecode && gateUpIsQuant &&
+        UseQuantBatchMatmul(linearParam) && !param.isPrefill) {
         inTensorNames.push_back("in_descale_0");  // 1: weightScaleOptional, fp32
         // 2: activationScaleOptional, translatednull
         inTensorNames.push_back("in_bias_0");  // 3: biasOptional, int32
@@ -548,9 +554,26 @@ atb::Status CreateMlp(
     atb::GraphOpBuilder* &graphOpBuilder,
     atb::Operation **operation, bool isSwiGLU)
 {
+    CHECK_OPERATION_STATUS_RETURN(CheckMlpParam(param));
+    bool downIsQuant = IsLinearDescQuant(param, DOWN_LINEAR_INDEX);
+    const bool hasUnsupportedNzDecodeConfiguration =
+        param.isPrefill || !param.isBF16 ||
+        param.matmulBackend != atb_speed::common::OpBackend::ACLNN ||
+        param.supportLora || param.enableFlashComm;
+    if (param.enableQuantMatmulNzGateUpDecode &&
+        (hasUnsupportedNzDecodeConfiguration || !isSwiGLU ||
+         param.mlpPackType != MlpPackType::GATE_UP_WEIGHT_PACK ||
+         !param.enableSwigluQuant || !downIsQuant)) {
+        ATB_SPEED_LOG_ERROR("QuantMatmulNzGateUpDecode received an unsupported MLP configuration");
+        return atb::ERROR_INVALID_PARAM;
+    }
+    if (param.enableQuantMatmulNzDownDecode &&
+        (hasUnsupportedNzDecodeConfiguration || !downIsQuant)) {
+        ATB_SPEED_LOG_ERROR("QuantMatmulNzDownDecode received an unsupported MLP configuration");
+        return atb::ERROR_INVALID_PARAM;
+    }
     bool isAntiOutlier = CheckAntiOutlier(param.packQuantType);
     isAntiOutlier = isAntiOutlier || param.isAntiOutlier;
-    CHECK_OPERATION_STATUS_RETURN(CheckMlpParam(param));
 
     std::string graphName = isSwiGLU ? "MlpSwiGLU" : "Mlp";
     if (param.mlpPackType == MlpPackType::GATE_UP_WEIGHT_PACK) {
@@ -581,7 +604,6 @@ atb::Status CreateMlp(
     if (param.isEdgeHardware) {
         CHECK_OPERATION_STATUS_RETURN(AddMlpEdgeActivation(param, graphOpBuilder));
     } else if (isSwiGLU) {
-        bool downIsQuant = IsLinearDescQuant(param, DOWN_LINEAR_INDEX);
         if (param.enableSwigluQuant && downIsQuant) {
             CHECK_OPERATION_STATUS_RETURN(AddDequantSwigluQuantNode(param, graphOpBuilder));
         } else {

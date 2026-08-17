@@ -21,6 +21,7 @@
 #include "operations/aclnn/ops/w4a16_operation.h"
 #include "operations/aclnn/ops/w4a8_operation.h"
 #include "operations/aclnn/ops/w8a8_operation.h"
+#include "operations/aclnn/ops/quant_matmul_nz_decode_operation.h"
 #include "operations/aclnn/ops/w16a16_operation.h"
 #include "operations/aclnn/ops/grouped_matmul_operation.h"
 #include "operations/aclnn/ops/dynamic_quant_operation.h"
@@ -285,6 +286,24 @@ int64_t AddAclNNQuantMatmul(atb::Node &linearNode, const FusionLinearParam &para
             (param.quantType == LINEAR_W8A8_DYNAMIC_QUANT
              && !param.enableSwiGLUQuantForSharedExperts)) ?
             "intermediate_quant_input" : "in_input";
+    }
+    if (param.enableQuantMatmulNzDecode) {
+        linearNode.inTensorIds = GetTensorIdxList(tensorMap, {
+            key, "in_weight", "in_descale", "in_bias"
+        });
+        linearNode.inTensorReshapeFuncs.resize(linearNode.inTensorIds.size());
+        linearNode.inTensorReshapeFuncs[0] =
+            [=](const atb::Dims &oldShape, atb::Dims &newShape) {
+                newShape.dimNum = NUM2;
+                if (oldShape.dimNum == NUM3) {
+                    newShape.dims[DIM0] = oldShape.dims[DIM0] * oldShape.dims[DIM1];
+                    newShape.dims[DIM1] = oldShape.dims[DIM2];
+                }
+            };
+        linearNode.operation =
+            new atb_speed::common::QuantMatmulNzDecodeOperation(
+                "QuantMatmulNzDecodeNode");
+        return atb::NO_ERROR;
     }
     std::string inScaleKey = (param.quantType == LINEAR_W8A8_QUANT || param.quantType == LINEAR_W8A8_DEQUANT) ?
         "in_descale" : "in_scale";
