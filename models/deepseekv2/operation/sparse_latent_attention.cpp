@@ -40,6 +40,7 @@ namespace sparse {
 constexpr uint64_t INDEXER_WQ_B_LINEAR_INDEX = 6;
 constexpr uint64_t INDEXER_WK_LINEAR_INDEX = 7;
 constexpr uint64_t INDEXER_PROJ_LINEAR_INDEX = 8;
+constexpr float INDEXER_K_NORM_EPS = 1e-6;
 
 bool UseAttnLinearDesc(const std::vector<int> &attnLinearQuantType)
 {
@@ -1731,13 +1732,13 @@ atb::Status AddIndexerKNode(const LatentAttentionParam<NormParamType> &param,
 }
 
 template <typename NormParamType>
-atb::Status AddIndexerKNormNode(const LatentAttentionParam<NormParamType> &param,
+atb::Status AddIndexerKNormNode(const LatentAttentionParam<NormParamType> & /*param*/,
     atb::GraphParam &opGraph, std::map<std::string, uint32_t> &tensorMap)
 {
     atb::Node knormNode;
     atb::infer::LayerNormParam knormParam;
     knormParam.layerType = atb::infer::LayerNormParam::LayerNormType::LAYER_NORM_NORM;
-    knormParam.normParam.epsilon = param.normEps;
+    knormParam.normParam.epsilon = INDEXER_K_NORM_EPS;
     knormParam.normParam.beginNormAxis = 1;
     knormParam.normParam.beginParamsAxis = 1;
     CHECK_OPERATION_STATUS_RETURN(atb::CreateOperation(knormParam, &knormNode.operation));
