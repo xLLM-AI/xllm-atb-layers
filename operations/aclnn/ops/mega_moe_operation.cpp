@@ -14,9 +14,6 @@ limitations under the License.
 ==============================================================================*/
 #include "operations/aclnn/ops/mega_moe_operation.h"
 
-#include <cstdlib>
-#include <dlfcn.h>
-#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,6 +21,7 @@ limitations under the License.
 #include "acl/acl.h"
 #include "atb_speed/log.h"
 #include "atb_speed/utils/operation_util.h"
+#include "operations/aclnn/utils/op_api_resolver.h"
 #include "operations/aclnn/utils/utils.h"
 
 namespace atb_speed {
@@ -48,7 +46,6 @@ constexpr int64_t kCubeBlockSize = 16;
 constexpr int64_t kBf16NzBlockSize = 32;
 constexpr int64_t kInt4NzBlockSize = 32;
 constexpr int64_t kInt4PackedBlockSize = 64;
-constexpr int kMegaMoeAclnnNotFound = -1;
 
 using AclnnMegaMoeGetWorkspaceSizeFunc = aclnnStatus (*)(
     const aclTensor *context,
@@ -79,103 +76,6 @@ using AclnnMegaMoeGetWorkspaceSizeFunc = aclnnStatus (*)(
     aclOpExecutor **executor);
 using AclnnMegaMoeFunc = aclnnStatus (*)(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor,
                                          aclrtStream stream);
-
-struct OpApiLib {
-    std::string path;
-    void *handle = nullptr;
-};
-
-std::vector<std::string> SplitString(const std::string &value, char delimiter)
-{
-    std::vector<std::string> result;
-    std::string token;
-    for (char ch : value) {
-        if (ch == delimiter) {
-            if (!token.empty()) {
-                result.push_back(token);
-            }
-            token.clear();
-            continue;
-        }
-        token.push_back(ch);
-    }
-    if (!token.empty()) {
-        result.push_back(token);
-    }
-    return result;
-}
-
-void AppendCustomOppLibs(std::vector<std::string> &libPaths)
-{
-    const char *customOppPath = std::getenv("ASCEND_CUSTOM_OPP_PATH");
-    if (customOppPath == nullptr) {
-        return;
-    }
-
-    for (const std::string &path : SplitString(customOppPath, ':')) {
-        libPaths.push_back(path + "/op_api/lib/libcust_opapi.so");
-    }
-}
-
-void AppendDefaultVendorLibs(std::vector<std::string> &libPaths)
-{
-    const char *oppPath = std::getenv("ASCEND_OPP_PATH");
-    if (oppPath == nullptr) {
-        return;
-    }
-
-    const std::string vendorsPath = std::string(oppPath) + "/vendors";
-    std::ifstream configFile(vendorsPath + "/config.ini");
-    std::string line;
-    while (std::getline(configFile, line)) {
-        const std::string loadPriorityPrefix = "load_priority=";
-        if (line.find(loadPriorityPrefix) != 0) {
-            continue;
-        }
-        line.erase(0, loadPriorityPrefix.size());
-        for (const std::string &vendor : SplitString(line, ',')) {
-            libPaths.push_back(vendorsPath + "/" + vendor + "/op_api/lib/libcust_opapi.so");
-        }
-        break;
-    }
-}
-
-std::vector<OpApiLib> OpenOpApiLibs()
-{
-    std::vector<std::string> libPaths;
-    AppendCustomOppLibs(libPaths);
-    AppendDefaultVendorLibs(libPaths);
-    libPaths.push_back("libcust_opapi.so");
-    libPaths.push_back("libopapi.so");
-
-    std::vector<OpApiLib> libs;
-    libs.reserve(libPaths.size());
-    for (const std::string &libPath : libPaths) {
-        void *handle = dlopen(libPath.c_str(), RTLD_LAZY);
-        if (handle == nullptr) {
-            ATB_SPEED_LOG_DEBUG("MegaMoe dlopen " << libPath << " failed, error:" << dlerror());
-            continue;
-        }
-        libs.push_back({libPath, handle});
-    }
-    return libs;
-}
-
-void *GetOpApiFuncAddr(const char *apiName)
-{
-    static const std::vector<OpApiLib> libs = OpenOpApiLibs();
-    for (const OpApiLib &lib : libs) {
-        dlerror();
-        void *funcAddr = dlsym(lib.handle, apiName);
-        const char *error = dlerror();
-        if (error == nullptr && funcAddr != nullptr) {
-            ATB_SPEED_LOG_DEBUG("MegaMoe found " << apiName << " in " << lib.path);
-            return funcAddr;
-        }
-    }
-    ATB_SPEED_LOG_ERROR("MegaMoe can not find " << apiName << " in opapi libs");
-    return nullptr;
-}
 
 int64_t CeilDiv(int64_t dividend, int64_t divisor)
 {
@@ -454,9 +354,9 @@ int MegaMoeOperation::SetAclNNWorkspaceExecutor()
 {
     ATB_SPEED_LOG_DEBUG(opName_ << " SetAclNNWorkspaceExecutor start");
     static const auto aclnnMegaMoeGetWorkspaceSize =
-        reinterpret_cast<AclnnMegaMoeGetWorkspaceSizeFunc>(GetOpApiFuncAddr("aclnnMegaMoeGetWorkspaceSize"));
+        GetOpApiFunc<AclnnMegaMoeGetWorkspaceSizeFunc>("aclnnMegaMoeGetWorkspaceSize");
     if (aclnnMegaMoeGetWorkspaceSize == nullptr) {
-        return kMegaMoeAclnnNotFound;
+        return kAclnnOpApiNotFound;
     }
 
     AclNNVariantPack &aclnnVariantPack = this->aclnnOpCache_->aclnnVariantPack;
@@ -496,9 +396,9 @@ int MegaMoeOperation::SetAclNNWorkspaceExecutor()
 int MegaMoeOperation::ExecuteAclNNOp(uint8_t *workspace, aclrtStream &stream)
 {
     ATB_SPEED_LOG_DEBUG(opName_ << " aclnnMegaMoe start");
-    static const auto aclnnMegaMoe = reinterpret_cast<AclnnMegaMoeFunc>(GetOpApiFuncAddr("aclnnMegaMoe"));
+    static const auto aclnnMegaMoe = GetOpApiFunc<AclnnMegaMoeFunc>("aclnnMegaMoe");
     if (aclnnMegaMoe == nullptr) {
-        return kMegaMoeAclnnNotFound;
+        return kAclnnOpApiNotFound;
     }
 
     int ret = aclnnMegaMoe(workspace, this->aclnnOpCache_->workspaceSize, this->aclnnOpCache_->aclExecutor, stream);
