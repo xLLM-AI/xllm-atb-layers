@@ -3,13 +3,44 @@
  */
 
 #include "sparse_flash_attention_operation.h"
+#include "operations/aclnn/utils/op_api_resolver.h"
 #include "operations/aclnn/utils/utils.h"
 #include "acl/acl.h"
-#include "aclnn_sparse_flash_attention.h"
 #include "atb_speed/log.h"
 
 namespace atb_speed {
 namespace common {
+namespace {
+
+// The 23-param aclnnSparseFlashAttention API shipped with CANN 9.0.0/9.1.0.
+using AclnnSparseFlashAttentionGetWorkspaceSizeFunc = aclnnStatus (*)(
+    const aclTensor *query,
+    const aclTensor *key,
+    const aclTensor *value,
+    const aclTensor *sparseIndices,
+    const aclTensor *blockTableOptional,
+    const aclTensor *actualSeqLengthsQueryOptional,
+    const aclTensor *actualSeqLengthsKvOptional,
+    const aclTensor *queryRopeOptional,
+    const aclTensor *keyRopeOptional,
+    double scaleValue,
+    int64_t sparseBlockSizeOptional,
+    char *layoutQueryOptional,
+    char *layoutKvOptional,
+    int64_t sparseMode,
+    int64_t preTokens,
+    int64_t nextTokens,
+    int64_t attentionMode,
+    bool returnSoftmaxLse,
+    const aclTensor *attentionOut,
+    const aclTensor *softmaxMax,
+    const aclTensor *softmaxSum,
+    uint64_t *workspaceSize,
+    aclOpExecutor **executor);
+using AclnnSparseFlashAttentionFunc =
+    aclnnStatus (*)(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, const aclrtStream stream);
+
+} // namespace
 
 SparseFlashAttentionOperation::SparseFlashAttentionOperation(const std::string &name,
                                                                  SparseFlashAttentionParam param)
@@ -86,9 +117,20 @@ atb::Status SparseFlashAttentionOperation::CreateAclNNOutTensorVariantPack(const
 int SparseFlashAttentionOperation::SetAclNNWorkspaceExecutor()
 {
     ATB_SPEED_LOG_DEBUG(opName_ << " SetAclNNWorkspaceExecutor start");
+    // Resolve the op-api entry from the vendor op-api libraries instead of
+    // calling the CANN built-in entry: the op definition keeps evolving in the
+    // ops-transformer vendor package (e.g. the sinks input added after CANN
+    // 9.1.0), so the built-in wrapper marshals parameters per an older
+    // definition than the vendor opmaster/kernel selected by the aclInit
+    // registry, producing silently wrong results.
     // CANN 9.0's SparseFlashAttention adds 4 inputs (fixed defaults) and 2
     // outputs. See:
     // https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/API/aolapi/context/ops-transformer/aclnnSparseFlashAttention.md
+    static const auto aclnnSparseFlashAttentionGetWorkspaceSize =
+        GetOpApiFunc<AclnnSparseFlashAttentionGetWorkspaceSizeFunc>("aclnnSparseFlashAttentionGetWorkspaceSize");
+    if (aclnnSparseFlashAttentionGetWorkspaceSize == nullptr) {
+        return kAclnnOpApiNotFound;
+    }
     int64_t preTokens = 9223372036854775807;
     int64_t nextTokens = 9223372036854775807;
     int64_t attentionMode = 2;
@@ -122,6 +164,11 @@ int SparseFlashAttentionOperation::SetAclNNWorkspaceExecutor()
 int SparseFlashAttentionOperation::ExecuteAclNNOp(uint8_t *workspace, aclrtStream &stream)
 {
     ATB_SPEED_LOG_DEBUG(opName_ << " ExecuteAclNNOp start");
+    static const auto aclnnSparseFlashAttention =
+        GetOpApiFunc<AclnnSparseFlashAttentionFunc>("aclnnSparseFlashAttention");
+    if (aclnnSparseFlashAttention == nullptr) {
+        return kAclnnOpApiNotFound;
+    }
     int ret = aclnnSparseFlashAttention(workspace, this->aclnnOpCache_->workspaceSize,
                                           this->aclnnOpCache_->aclExecutor, stream);
     ATB_SPEED_LOG_DEBUG(opName_ << " ExecuteAclNNOp end, ret:" << ret);
