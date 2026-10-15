@@ -166,6 +166,7 @@ atb::Status SetFusionAttentionParam(
     fusionAttentionParam.enableAclnnRmsNorm = param.enableAclnnRmsNorm;
     fusionAttentionParam.enableAclGraphPagedAttention = param.enableAclGraphPagedAttention;
     fusionAttentionParam.enableAddNorm = param.enableAclnnExternelAddRmsNorm;
+    fusionAttentionParam.enableSplitRmsNormRope = param.enableSplitRmsNormRope;
     fusionAttentionParam.matmulBackend = atb_speed::common::OpBackend::ACLNN;
     fusionAttentionParam.isFIA = param.isFIA;
     fusionAttentionParam.bs = param.bs;

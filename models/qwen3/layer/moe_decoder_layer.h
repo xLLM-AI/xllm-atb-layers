@@ -55,6 +55,7 @@ public:
     bool enableAclnnAddRmsNorm = false;
     bool enableAclnnExternelAddRmsNorm = false;
     bool enableFusedReducesumDiv = false;
+    bool enableSplitRmsNormRope = false;
     std::shared_ptr<int> bs = std::make_shared<int>(0);
 };
 
